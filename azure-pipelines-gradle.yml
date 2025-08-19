@@ -1,0 +1,173 @@
+---
+parameters:
+ - name: releaseId
+   type: string
+   displayName: Release WorkItem ID
+   default: "8414034"
+   
+ - name: hubId
+   type: string
+   displayName: Country
+   default: "HK"
+
+ - name: projectModule
+   displayName: Project Module
+   type: string
+   default: GLOBUS
+   values:
+   - GLOBUS
+   - MULES
+   - CHEKK
+   - TAX
+
+
+   
+trigger:
+- develop
+- release/*
+- main
+ 
+resources:
+  repositories:
+    - repository: governed-templates
+      name: dj-core/governed-templates
+      ref: "main"
+      type: git      
+ 
+variables:
+  - name: BRANCH_NAME
+    value: $(Build.SourceBranchName)
+  - name: VERSION
+    value: '1.0.0-SNAPSHOT-$(Build.BuildId)'
+ 
+ 
+extends:
+  template: governed-template/build-and-deploy.yml@governed-templates
+  parameters:
+      releaseId: ${{ parameters.releaseId }}
+      ITAM: 50403  # Update the ITAM - CI ID for your application
+      buildStackName: gradle
+      buildStackParams:
+        pool: 'sc-linux'
+        jdkVersion: '17' #optional          
+        gradleVersion: '8.5' #optional
+        options: '--no-daemon --info --stacktrace -Pbranch=$(Build.SourceBranchName) -Dorg.gradle.internal.http.socketTimeout=180000 -Dorg.gradle.internal.http.connectionTimeout=180000'
+        tasks: 'clean build jacocoTestReport --continue --stacktrace' #optional
+        publishJUnitResults: false #optional
+        #buildArguments: '-v' #optional
+        #ArtifactTargetRepo: generic-release
+        dockerBuild: false #optional
+        dockerRepository: '/tde/ado' #optional
+        dockerFilePaths:   
+          - path: '$(Build.Repository.Name)/dtp-credence-client-request-handler-service/Dockerfile'
+            imageName: 'dtp-credence-client-request-handler-service'
+            imageTag: '$(BRANCH_NAME)-$(Build.BuildId)'
+            dockerArguments: '--build-arg version=$(VERSION)'
+            dockerBuildContext: '$(Build.Repository.Name)'
+          - path: '$(Build.Repository.Name)/dtp-credence-client-controller/Dockerfile'
+            imageName: 'dtp-credence-client-controller'
+            imageTag: '$(BRANCH_NAME)-$(Build.BuildId)'
+            dockerArguments: '--build-arg version=$(VERSION)'
+            dockerBuildContext: '$(Build.Repository.Name)'
+        deployStackName: 'ansible' #optional
+        deploymentFolderName: 'ado-playbooks' #optional
+        archiveType: 'zip' #optional    
+        usesPlugin: true
+        artifactoryRelativePath: '$(System.TeamProject)/release/$(Build.Repository.Name)/$(Build.BuildId)/' #optional
+        targetPathArtifactory: 'gradle-release/$(System.TeamProject)/release/$(Build.Repository.Name)/$(Build.BuildId)/' #optional
+        binaryPath: 'build/classes/'
+        #sonarExclusions: 'src/test/**,src/main/resources/**,src/main/webapp/**,src/main/java/com/scb/clm/services/globus/prospect/v1/model/GBSProspectRequestAddress.java,src/main/java/com/scb/clm/services/globus/prospect/v1/service/ProspectService.java,src/main/java/com/scb/clm/services/globus/cddinitiate/v1/service/CDDInitiateCreateService.java,src/main/java/com/scb/clm/services/globus/icm/v1/service/ICMCreateService.java'
+        sonarExclusions: 'src/test/**,src/main/resources/**,src/main/webapp/**,src/main/java/com/scb/clm/services/globus/cleanup/**,src/main/java/com/scb/clm/services/globus/deepening/**,src/main/java/com/scb/clm/common/security/auth/AuthenticationFilter.java,src/main/java/com/scb/clm/common/security/auth/WebSecurityConfig.java,src/main/java/com/scb/clm/common/security/auth/AuthorizationFilter.java,src/main/java/com/scb/clm/services/globus/pdpa/v1/service/PDPACreateService.java'
+        sonarSources: 'src/'
+        sonarXmlReportPaths: 'build/reports/jacoco/test/jacocoTestReport.xml'
+        sonarJunitReportPaths: 'build/reports/tests/test/'
+        skipEarlyFeedback: true #optional [To skip Early Feedback stage]
+      deployStackName: ansible        
+      deployStackParams:
+        ansibleVerboseLevel: -vvvv
+        ansibleConfigPath: ado-playbooks/ansible.cfg
+        playbookDryRun: false
+        globalSSHKey: true
+        #extraVars: "tag_version=$(Build.BuildId) comp_version=$(Build.BuildId) service_name=GLOBAL-ICM brn_name=$(Build.Repository.Name) hubid=${{ parameters.hubId }} env=${{ parameters.environementId }} app_name=ICM jws_user=jbossadm"
+      deployEnvironments:
+        - name: dev
+          environment: dev
+          displayName: Dev
+          enableQualysScan: true
+          collectionFilePath: 'Chekk-CompanySearch.postman_collection.json.enc'
+          endpointType: 'INTERNAL'
+          notifyUsers: Rajkumar.R4@sc.com
+          pool: sc-linux
+          inventoryPath: ado-playbooks/inventories/uat/hosts.ini
+          extraVars: "ArtiStagDir=$(Build.ArtifactStagingDirectory) tag_version=$(Build.BuildId) comp_version=$(Build.BuildId) service_name=${{ parameters.projectModule }} brn_name=$(Build.Repository.Name) hubid=${{ parameters.hubId }} env=UAT app_name=CLM tom_user=tomadm"
+          playbookPath: ado-playbooks/uat-jws-deploy-micro.yml
+          applicationSecretConfigs:
+            - secretName: '50403_UAT_globus'
+              secureFile: '50403_UAT_globus.jks'
+              file: 'ado-playbooks/50403_UAT_globus.jks'      
+          secretsFileSelector: '**/*.{properties,yml,keystore,jks}'  
+        - name: qa
+          environment: qa
+          displayName: QA
+          notifyUsers: Rajkumar.R4@sc.com
+          pool: sc-linux
+          inventoryPath: ado-playbooks/inventories/uat/hosts.ini
+          extraVars: "ArtiStagDir=$(Build.ArtifactStagingDirectory) tag_version=$(Build.BuildId) comp_version=$(Build.BuildId) service_name=${{ parameters.projectModule }} brn_name=$(Build.Repository.Name) hubid=${{ parameters.hubId }} env=UAT app_name=CLM tom_user=tomadm"
+          playbookPath: ado-playbooks/uat-jws-deploy-micro.yml
+          applicationSecretConfigs:
+            - secretName: '50403_UAT_globus'
+              secureFile: '50403_UAT_globus.jks'
+              file: 'ado-playbooks/50403_UAT_globus.jks'             
+          secretsFileSelector: '**/*.{properties,yml,keystore,jks}'   
+          dependsOn:
+            - dev
+        - name: staging
+          environment: staging
+          displayName: Staging
+          dependsOn:
+            - qa
+          notifyUsers: Rajkumar.R4@sc.com
+          inventoryPath: ado-playbooks/inventories/uat/hosts.ini
+          extraVars: "ArtiStagDir=$(Build.ArtifactStagingDirectory) tag_version=$(Build.BuildId) comp_version=$(Build.BuildId) service_name=${{ parameters.projectModule }} brn_name=$(Build.Repository.Name) hubid=${{ parameters.hubId }} env=UAT app_name=CLM tom_user=tomadm"
+          playbookPath: ado-playbooks/uat-jws-deploy-micro.yml
+          applicationSecretConfigs:
+            - secretName: '50403_UAT_globus'
+              secureFile: '50403_UAT_globus.jks'
+              file: 'ado-playbooks/50403_UAT_globus.jks'              
+          secretsFileSelector: '**/*.{properties,yml,keystore,jks}'
+          pool: sc-linux
+        - name: release_checks
+          environment: pre-release
+          displayName: Pre-Release
+          dependsOn:
+            - staging
+          notifyUsers: Rajkumar.R4@sc.com
+          pool: sc-linux
+          hasGenie: false
+          qaStageName: qa
+        - name: release
+          environment: release
+          displayName: Release
+          dependsOn:
+            - release_checks
+          notifyUsers: Rajkumar.R4@sc.com
+          pool: sc-linux
+          hasGenie: false
+        - name: prod
+          environment: production
+          displayName: Production
+          inventoryPath: ado-playbooks/inventories/prd/hosts.ini
+          extraVars: "ArtiStagDir=$(Build.ArtifactStagingDirectory) tag_version=$(Build.BuildId) comp_version=$(Build.BuildId) service_name=${{ parameters.projectModule }} brn_name=$(Build.Repository.Name) hubid=${{ parameters.hubId }} env=PRD app_name=CLM tom_user=tomadm"
+          playbookPath: ado-playbooks/prd-jws-deploy-micro.yml
+          applicationSecretConfigs:
+            - secretName: '50403_UAT_globus'
+              secureFile: '50403_UAT_globus.jks'
+              file: 'ado-playbooks/50403_UAT_globus.jks'         
+          secretsFileSelector: '**/*.{properties,yml,keystore,jks}'
+          dependsOn:
+            - release
+          notifyUsers: Rajkumar.R4@sc.com
+          pool: sc-linux
+
+    
+    

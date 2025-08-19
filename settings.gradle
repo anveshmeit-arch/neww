@@ -1,0 +1,9 @@
+pluginManagement {
+    repositories {
+
+     maven { url "https://artifactory.global.standardchartered.com/artifactory/maven-release/" }
+     maven { url "https://artifactory.global.standardchartered.com/artifactory/maven-snapshot/" }
+        gradlePluginPortal()
+    }
+}
+rootProject.name = 'Customer-Services'
